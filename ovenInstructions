@@ -1,0 +1,43 @@
+---REFLOW OVEN---
+
+Use instructions of the NanoSat Lab DIY reflow oven.
+
+Note1: this is the procedure for using the reflow oven at it current state (without any completed physical interface, and without a custom made PCB).
+Note2: FLASHING When flashing the arduino the oven must be unplugged from the power, and the buzzer (if connected to the arduino) should be disconnected.
+Note3: it is currently configured to work with the NanoSat Lab wifi, this configuration can be changed following steep 0.
+
+	0 ->    The oven probably (if nobody has changed it) the correct files uploaded, if so just skip this steep. 
+		Download the script, check the correct ssid and passwords are set and flash the arduino. Take into account that the folder 
+		must contain the code .ino and to more files: index1.h and index2.h .
+
+	1 ->    The PCB must have attached to its underside the thermocouple (metal nugget with long white and brown cables) with kapton. Try to secure it well and
+		centered. Typically, this steep is done after the PCB has all components placed in it. Then place the PCB as centered as possible in the 
+		metal grid inside the oven and close the hatch.
+
+	2 ->    Connect the arduino to your computer or some kind of adequate alimentation. In the oled screen you should see "Connecting to wifi..." , otherwise 
+		the alimentation has fail or the code is incorrect.
+
+	3 ->    If the screen is still displaying that message something is wrong. It can be the wifi is not availiable (not working), or the ssid and password are incorrect.
+		In the second case go to steep 0.
+
+	4 ->    The screen is displaying "Connected at  xxxxxxxxx standing by". Then, with a device connected to the same wifi, access the server writing xxxxxxxxx (the server IP)
+		on the search engine.
+
+	5 ->    One in the server, write the parameters for the reflow. In standard runs use:
+			Kp = 90   Ki = 30   Kd = 15  T1 = 150   T2= 200   T3 = 250   D1 = 120   D2 = 50
+		
+		The PID parameters have been tuned for this precise set of parameters, more tune can be convenient if more accuracy is needed.
+
+	6 ->    Review all parameters are correct, the PCB with the thermocouple is centered and the hatch closed. If so plug the oven into the power and finally click on GO.
+
+	7 ->    Now relax and enjoy the view. We strongly recommend keeping an eye ion the status graph, the oven is at its beta state an something could go wrong. 
+
+	8 ->    When the temperature reaches 250, open the hatch and retrieve the grid to help cool down the PCB. Left it there till the temperatures is below 50 degrees.
+		It is possible (if it has been implemented) the buzzer will make a sound then reaching 250 and a blue led will light up.
+
+	9 ->    To bake an other PCB repeat the process skipping steep 2, just pres the reset button and check the furnace structure has cooled down enough.
+
+Enjoy the experience and remember, if you burn a PCB is because you did not take it out in time. Be around when baking and if anything smells a bit plastic unplug it all!!
+
+
+
