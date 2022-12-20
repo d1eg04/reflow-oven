@@ -1,0 +1,432 @@
+//per Diego Garcin de la Llave
+//===============================================================
+//                        CONEXIONS
+//===============================================================
+
+/*    Max6675 Module  ==>   NodeMCU  ==>  Pin_Name
+      CS              ==>     D8     ==>   15
+      SO              ==>     D6     ==>   12
+      SCK             ==>     D5     ==>   14
+      Vcc             ==>     3.3V   ==>   3V
+      Gnd             ==>     Gnd    ==>   G  */
+
+/*    OLED  ==>   NodeMCU  ==>  Pin_Name
+      SCL             ==>     D1     ==>   5
+      SDA             ==>     D2     ==>   4
+      Vcc             ==>     3.3V   ==>   3V
+      Gnd             ==>     Gnd    ==>   G  */
+
+/* RELE      D7 ==> 13 aka rele
+   BUZZER    D0 ==> 16 //high on boot
+   LED BLUE  D3 ==> 0  //high on boot
+   LED RED   D4 ==> 2  //high on boot
+   RESET     GND ==> pulsador  ==> RST
+
+*/
+
+//Kpid = (90, 30, 15)
+//D12 = (120, 50)
+//T123 = (150, 200, 250)
+
+
+
+
+//===============================================================
+//                 llibreries i varaiables globals
+//===============================================================
+
+// ---Sensor de temperatura---
+#include "max6675.h"
+int thermoDO = 12;
+int thermoCS = 15;
+int thermoCLK = 14;
+MAX6675 thermocouple(thermoCLK, thermoCS, thermoDO);
+
+
+// ---PID---
+#include <PID_v2.h>
+
+
+// ---BUZZER---
+#define buzzer 16
+
+
+// ---LEDs---
+int LED_hatch = 0; //blue
+int LED_running = 2; //red
+
+
+double Kp = 90, Ki = 40, Kd = 10; // Specify the links and initial tuning parameters
+PID_v2 myPID(Kp, Ki, Kd, PID::Direct);
+double targetPID;
+
+
+// ---RELE---
+int RELE = 13;
+
+
+// ---OLED---
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1); // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+
+
+// ---variables dels programa---
+int deltaT = 1000; //durada dels intervalls en millis
+#define windowSize deltaT
+double t0Cycle = 0 ;
+double inPIDserver = 0;
+double targetPIDserver = 0;
+int MODE = 0; //0 agafar dades, 1 running
+double humidity, temperature; //tenen aquests noms xk el codi es reciclat i recorda, reciclar es bo
+double T1 = 0, T2 = 0, T3 = 0, D1 = 0, D2 = 0 ;
+int ACT1 = 0; //variable per a que una cosa sol s'activi un cop
+bool alarma = false;
+
+// ---target profile---
+double T0 ;
+double t0;
+double t0_var = 0; 
+int checkValue = 0;
+
+
+
+// ---server---
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include "index1.h"
+#include "index2.h"
+
+const char* ssid =  "";
+const char* password = "";
+
+ESP8266WebServer server(80); //Server on port 80
+
+
+
+
+//===============================================================
+// F1: This routine is executed when you open its IP in browser
+//===============================================================
+void handleRoot() {
+  if (MODE == 0) {
+    String s = MAIN_page1; //input param
+    server.send(200, "text/html", s); //Send web page
+  }
+  else {
+    String s = MAIN_page1; //input param
+    server.send(200, "text/html", s); //Send web page
+  }
+
+}
+
+
+
+//===============================================================
+// F2: This routine is executed when you press submit
+//===============================================================
+
+void handleForm() {//recull les dades del formular (pàgina no visible)
+
+
+  String Kp_ = server.arg("Kp");
+  String Ki_ = server.arg("Ki");
+  String Kd_ = server.arg("Kd");
+  String T1_ = server.arg("T1");
+  String T2_ = server.arg("T2");
+  String T3_ = server.arg("T3");
+  String D1_ = server.arg("D1");
+  String D2_ = server.arg("D2");
+
+
+
+
+  Kp = Kp_.toDouble(); //no perta xo si es text retorna 0
+  Ki = Ki_.toDouble();
+  Kd = Kd_.toDouble();
+  T1 = T1_.toDouble();
+  T2 = T2_.toDouble();
+  T3 = T3_.toDouble();
+  D1 = D1_.toDouble();
+  D2 = D2_.toDouble();
+
+  myPID.SetTunings(Kp, Ki, Kd);
+
+  Serial.print("New settings: " );
+  Serial.print("\t Kp= ");
+  Serial.print(myPID.GetKp());
+  Serial.print("\t Ki= " );
+  Serial.print(myPID.GetKi());
+  Serial.print("\t Kd= " );
+  Serial.println(myPID.GetKd());
+
+  Serial.print("New settings: " );
+  Serial.print("\t T1= ");
+  Serial.print(T1);
+  Serial.print("\t T2= " );
+  Serial.print(T2);
+  Serial.print("\t T3= ");
+  Serial.print(T3);
+  Serial.print("\t D1= " );
+  Serial.print(D1);
+  Serial.print("\t D2= " );
+  Serial.print(D2);
+
+
+  MODE = 1;
+
+  String s = MAIN_page2;
+  server.send(200, "text/html", s); //Send web page
+
+}
+
+
+
+//===============================================================
+//                        F3: handleADC()
+//===============================================================
+
+void handleADC() {
+  //Ref 1: https://circuits4you.com/2019/01/11/nodemcu-esp8266-arduino-json-parsing-example/
+  //Ref 2: https://circuits4you.com/2019/01/25/arduino-how-to-put-quotation-marks-in-a-string/
+  String data = "{\"ADC\":\"" + String(checkValue) + "\", \"Temperature\":\"" + String(temperature) + "\", \"Humidity\":\"" + String(humidity) + "\"}";
+  server.send(200, "text/plane", data); //Send ADC value, temperature and humidity JSON to client ajax request
+
+  //Get Humidity temperatue data after request is complete
+  temperature = inPIDserver;//temperature=temperature
+  humidity = targetPIDserver; //humidity=target
+}
+
+
+
+
+//==============================================================
+//                     F4: setpoint
+//==============================================================
+
+double setpoint() {
+  //OJO: tots els temps en s menys t0 en ms
+  //t0,T0 previament definides
+
+
+  //parametros corba
+  //double T1 = 150; //150
+  //double T2 = 200; //200
+  //double T3 = 250; //250
+  //double D1 = 120; //segons
+  //double D2 = 50; //segons
+  double m1 = 0.8;
+  double m2 = (T2 - T1) / D1;
+  double m3 = (T3 - T2) / D2; //en valor abslolut
+
+  //temps de final de casa fase
+  double t1 = (T1 - T0) / m1  ;
+  double t2 = t1 + D1 ;
+  double t3 = t2 + D2 ;
+  double t4 = t3 + D2 ;
+
+  double Dt = (millis() - t0) / 1000;
+  double target;
+
+  if (Dt < t1) {
+    target =  Dt * m1 + T0 ;
+  }
+  else if (Dt < t2) {
+    target =  (Dt - t1) * m2 + T1;
+  }
+  else if (Dt < t3) {
+    target = (Dt - t2) * m3 + T2 ;
+  }
+  else if (Dt < t4) {
+    target = (Dt - t3) * (-1) * m3 + T3 ;
+  }
+  else {
+    target = 0 ;
+  }
+  return target;
+}
+
+
+
+
+//==============================================================
+//                            SETUP
+//==============================================================
+
+void setup() {
+  // ---RELE+SERIAL+BUZZER+LEDs---
+  pinMode(RELE, OUTPUT);
+  pinMode(buzzer, OUTPUT);
+  pinMode(LED_hatch, OUTPUT);
+  pinMode(LED_running, OUTPUT);
+  Serial.begin(9600);
+
+
+  // ---OLED---
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;);
+  }
+  delay(2000);
+  display.clearDisplay();
+
+
+  // ---config PID---
+  myPID.SetOutputLimits(0, deltaT);
+  myPID.Start(thermocouple.readCelsius(),  // input
+              deltaT,                      // current output
+              40);                   // setpoint
+
+  //misatge per a la oled
+  Serial.println("ON ");
+  display.setTextColor(WHITE);
+  display.setTextSize(1);
+  display.setCursor(5, 30);
+  display.print("Connecting to wifi...");
+  display.display();
+
+  // ---WIFI---
+  WiFi.begin(ssid, password);     //Connect to your WiFi router
+  Serial.println("");
+  while (WiFi.status() != WL_CONNECTED) { // Wait for connection
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println(""); //If connection successful show IP address in serial monitor
+  Serial.print("Connected to ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());  //IP address assigned to your ESP
+
+  //missatge a la oled
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+  display.setTextSize(1);
+  display.setCursor(5, 15);
+  display.print("Connected at ");
+  display.setCursor(5, 30);
+  display.print(WiFi.localIP());
+  display.setCursor(5, 45);
+  display.print("Standing by");
+  display.display();
+
+  server.on("/", handleRoot);      //Which routine to handle at root location
+  server.on("/action_page", handleForm); //form action is handled here
+  server.on("/readADC", handleADC);
+
+  server.begin();                  //Start server
+  Serial.println("HTTP server started");
+
+}
+
+
+
+//==============================================================
+//                     LOOP
+//==============================================================
+
+void loop()
+{
+  if (MODE == 0) {
+    server.handleClient();
+  }
+  else {
+    if (ACT1 == 0) { //a la primera acctivacio
+      T0 = thermocouple.readCelsius();
+      t0 = millis();
+      digitalWrite(LED_running, HIGH);
+      ACT1 = 1;
+    }
+
+    // ---VARIABLES---
+    targetPID = setpoint();
+    myPID.Setpoint(targetPID);
+    const double inPID = thermocouple.readCelsius();
+    const double outPID = myPID.Run(inPID);
+
+    inPIDserver = inPID; //per al server
+    targetPIDserver = targetPID;
+
+    // ---CONTROLADOR + SERVER---
+    delay(250); //necesaris per al thermocouple
+    //condicional de apagat
+    if (targetPID == 0 || inPID > T3) {
+      server.handleClient();          //Handle client requests
+      digitalWrite(RELE, LOW);
+      checkValue = 0;
+      delay(5000); //per a que estigui almenys 5s a 250
+      if (!alarma) {
+        Serial.print("ALARMA ALARMA ALARMA ALARMA ALARMA ALARMA ALARMA ALARMA ALARMA");
+        digitalWrite(buzzer, HIGH);
+        delay(1000);
+        digitalWrite(buzzer, LOW);
+        digitalWrite(LED_running, LOW);
+        digitalWrite(LED_hatch, HIGH);
+        alarma = true ;
+      }
+    }
+    else {
+      server.handleClient();
+      while (millis() - t0_var > windowSize) t0_var += windowSize;
+      if (outPID > millis() - t0_var) {
+        if (alarma) {
+          digitalWrite(RELE, LOW);
+          checkValue = 0;
+        }
+        else {
+          digitalWrite(RELE, HIGH);
+          checkValue = 50;
+        }
+
+      }
+      else {
+        digitalWrite(RELE, LOW);
+        checkValue = 0;
+      }
+    }
+
+    // ---PRINT DADES---
+    Serial.print("T = ");
+    Serial.print(inPID);
+    Serial.print("\t outputPID= ");
+    Serial.print(outPID);
+    Serial.print("\t target= " );
+    Serial.print(targetPID);
+    Serial.print("\t checkValue= " );
+    Serial.println(checkValue);
+
+    // ---PRINT OLED---
+    display.clearDisplay();
+    display.setTextColor(WHITE);
+    display.setTextSize(1);
+    display.setCursor(5, 15);
+
+    display.print("T= ");
+    display.setCursor(80, 15);
+    display.print(inPID);
+    display.print((char)247); // degree symbol
+    display.print("C");
+
+    display.setCursor(5, 30);
+    display.print("Target: ");
+    display.setCursor(80, 30);
+    display.print(targetPID);
+    display.print((char)247); // degree symbol
+    display.print("C");
+
+    display.setCursor(5, 45);
+    display.print("Output: ");
+    display.setCursor(80, 45);
+    display.print(outPID);
+    display.print(" ");
+    display.display();
+  }
+}
