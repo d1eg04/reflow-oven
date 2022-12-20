@@ -1,0 +1,39 @@
+const char MAIN_page1[] PROGMEM = R"=====(
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>ReFlow Oven<h2>
+<h3> Parametres del controlador</h3>
+
+<form action="/action_page">
+  Kp name:<br>
+  <input type="text" name="Kp" value="0">
+  <br>
+  Ki name:<br>
+  <input type="text" name="Ki" value="0">
+  <br>
+  Kd name:<br>
+  <input type="text" name="Kd" value="0">
+  <br><br><br>
+  T1 name:<br>
+  <input type="text" name="T1" value="0">
+  <br>
+  T2 name:<br>
+  <input type="text" name="T2" value="0">
+  <br>
+  T3 name:<br>
+  <input type="text" name="T3" value="0">
+  <br><br>
+  D1 name:<br>
+  <input type="text" name="D1" value="0">
+  <br>
+  D2 name:<br>
+  <input type="text" name="D2" value="0">
+  <br><br><br>
+  <input type="submit" value="GO">
+</form> 
+
+</body>
+</html>
+)=====";
